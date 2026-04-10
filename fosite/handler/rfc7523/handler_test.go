@@ -784,6 +784,43 @@ func (s *AuthorizeJWTGrantRequestHandlerTestSuite) TestValidAssertionDoesNotCopy
 	)
 }
 
+func (s *AuthorizeJWTGrantRequestHandlerTestSuite) TestRequestedAudienceIsGrantedWhenAssertionAudienceOmitted() {
+	// arrange
+	ctx := context.Background()
+	s.accessRequest.GrantTypes = []string{grantTypeJWTBearer}
+	keyID := "my_key"
+	pubKey := s.createJWK(s.privateKey.Public(), keyID)
+	cl := s.createStandardClaim()
+	s.handler.Config.(*fosite.Config).GrantTypeJWTBearerOmitAssertionAudience = true
+
+	s.accessRequest.Form.Add("assertion", s.createTestAssertion(cl, keyID))
+	s.accessRequest.RequestedScope = []string{"valid_scope"}
+	s.accessRequest.SetRequestedAudience([]string{"https://api.example.com"})
+	s.mockStoreProvider.EXPECT().RFC7523KeyStorage().Return(s.mockStore).Times(4)
+	s.mockStore.EXPECT().GetPublicKey(ctx, cl.Issuer, cl.Subject, keyID).Return(&pubKey, nil)
+	s.mockStore.EXPECT().GetPublicKeyScopes(ctx, cl.Issuer, cl.Subject, keyID).Return([]string{"valid_scope", "openid"}, nil)
+	s.mockStore.EXPECT().IsJWTUsed(ctx, cl.ID).Return(false, nil)
+	s.mockStore.EXPECT().MarkJWTUsedForTime(ctx, cl.ID, cl.Expiry.Time()).Return(nil)
+
+	// act
+	err := s.handler.HandleTokenEndpointRequest(ctx, s.accessRequest)
+
+	// assert
+	s.NoError(err, "no error expected, because assertion must be valid")
+	s.ElementsMatch(
+		[]string{"https://api.example.com"},
+		s.accessRequest.GetGrantedAudience(),
+		"requested audience should be granted even when assertion audience is omitted",
+	)
+	for _, assertionAud := range cl.Audience {
+		s.NotContains(
+			s.accessRequest.GetGrantedAudience(),
+			assertionAud,
+			"audience from assertion JWT should NOT be in granted audience when OmitAssertionAudience is true",
+		)
+	}
+}
+
 func (s *AuthorizeJWTGrantRequestHandlerTestSuite) TestAssertionIsValidWhenNoScopesPassed() {
 	// arrange
 	ctx := context.Background()
