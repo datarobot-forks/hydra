@@ -110,10 +110,6 @@ func (c *Handler) HandleTokenEndpointRequest(ctx context.Context, request fosite
 		}
 	}
 
-	for _, audience := range request.GetRequestedAudience() {
-		request.GrantAudience(audience)
-	}
-
 	session, err := c.getSessionFromRequest(request)
 	if err != nil {
 		return err
